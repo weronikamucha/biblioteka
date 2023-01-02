@@ -1,0 +1,591 @@
+---
+title: "\\Huge Biblioteka rozkładów"
+subtitle: "\\huge Rozkłady do tworzenia symulacji"
+author: "Weronika Mucha, Aleksandra Duda"
+
+
+output:
+  html_document:
+    toc: yes
+    fig_caption: yes
+    toc_depth: 5
+bibliography: bibliografia.bib
+---
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"logo.png\" style=\"float: right;width: 300px;\"/>')
+   });
+</script>
+
+\newpage
+
+
+# Wprowadzenie
+Dokument powstał w celu uporządkowania wiedzy dotyczącej rozkładów przydatnych w procesie tworzenia symulacji. Rozkłady zostały opisane na podstawie stworzonych historycznych symulacji, kompendium sprzężonych rozkładów apriorycznych [@compendium] oraz powszechnie dostępnych źródeł dodanych w bibliografii.
+
+## Etapy tworzenia symulacji
+
+
+Konstrukcję symulacji rozpoczynamy od ustalenia parametrów potrzebnych do rozpatrywania mocy pierwszorzędowego punktu końcowego oraz liczby iteracji.
+
+* Etap 1: Dla każdego parametru określamy rozkład, z którego pochodzi i podstawowe wartości takie jak średnia, odchylenie standardowe oraz parametry dla poszczególnych rozkładów np. dla rozkładu beta: alfa i beta (parametry kształtu), dla rozkładu Dirichleta: parametry skupienia wektorów alfa. Warto wylosować przykładową wartość dla każdego parametru. W taki sposób otrzymujemy ramkę danych dla wybranych wielkości próby powtórzonych zgodnie z liczbą iteracji. Parametry wskazują na wartości i prawdopodobieństwa przyjęte dla każdej kolejnej symulacji.
+* Etap 2 Następny etap polega na stworzeniu ramki wyników dla każdej kolejnej symulacji z odpowiednimi parametrami, czyli np. gdy dla 1 symulacji wylosowaliśmy wielkość próby równą 25, a przyjęta wcześniej liczba iteracji wynosi 100, to ramka danych wyników dla 1 symulacji ma wygenerowanych 100 pacjentów z odpowiednimi wartościami parametrów zgodnie z prawdopodobieństwami z ramki parametrów.
+
+Możemy wykonać ramkę zbiorczą z numerem symulacji, wygenerowaną ramką parametrów i odpowiednią dla niej otrzymaną ramką wyników.
+
+## Metodyka
+Dla Etapu 1 tworzymy ramki danych, wpisując odpowiednie informacje uzyskane z literatury oraz od badaczy. Możemy podzielić parametry ze względu na wybrany do estymacji rozkład i stworzyć mniejsze ramki danych później łącząc je w całość prawdopodobieństw dla wszystkich parametrów.
+
+W Etapie 2 generujemy ramkę wyników korzystając funkcji defDataAdd z pakietu simstudy [@blogsim], która dodaje kolejne zmienne do utworzonej już tabeli:
+Argumenty w funkcji:
+
+* dtDefs- tabela, do której chcemy dodać kolejne wartości 
+* varname- nazwa zmiennej
+* formula- może być określony jako konkretna liczba (średnia) lub opisana wzorem odwołującym się do innej zmiennej
+* variance- wartość wariancji
+* dist- rozkład do generowania danych
+
+Argument "distribution":
+
+* "nonrandom"- rozkład spoza listy dostępnej w pakiecie, możemy w tej sytuacji napisać własną funkcję do generowania danych z dowolnego rozkładu, wtedy w argumencie formula podajemy nazwę funkcji w cudzysłowie.
+* możemy podać nazwę rozkładu, z którego chcemy generować
+
+## Przykład generowania danych
+```{r generowanie, echo=TRUE, eval=FALSE}
+def <- defData(varname = "age", dist = "normal", formula = 10,
+    variance = 2)
+def <- defData(def, varname = "female", dist = "binary",
+    formula = "-2 + age * 0.1", link = "logit")
+def <- defData(def, varname = "visits", dist = "poisson",
+    formula = "1.5 - 0.2 * age + 0.5 * female", link = "log")
+
+```
+
+W przykładzie generujemy zmienną wiek, określając średnią jako 10, zmienna kobieta zależna jest od wieku, a wzór na nią został zaimplementowany w argumencie "formula", podobnie ze zmienną wizyty.
+```{r generowanie 2, echo=TRUE, eval=FALSE}
+myinv <- function(x) {
+    1/x
+}
+
+def <- defData(varname = "age", formula = 10, variance = 2,
+    dist = "normal")
+def <- defData(def, varname = "loginvage", formula = "log(myinv(age))",
+    variance = 0.1, dist = "normal")
+```
+W przykładzie zostało zaprezentowane generowanie zmiennych z argumentem "formula" opisanym za pomocą dodanej wcześniej funkcji.
+
+```{r setup, include=FALSE}
+#biblioteki oraz style
+library(dplyr)
+library(simstudy)
+library(ggplot2)
+library(kableExtra)
+library(tibble)
+library(table1)
+library(flextable)
+library(actuar)
+style_arsenal <- function(test) {
+  test <-
+    test %>%
+    flextable()  %>% theme_vanilla() %>% autofit() %>% fit_to_width(6.8) %>% fontsize(size = 8, part = 'body') %>%  fontsize(size = 8, part = 'header')
+  return(test)
+}
+```
+
+```{r, echo=FALSE, fig.cap="Rozkłady dostępne w simstudy"}
+number <- c(1:15)
+name <- c("beta", "binary", "binomial", "categorical", "exponential", "gamma", "mixture", "negBinomial", "nonrandom","normal","noZeroPoisson", "poisson", "trtAssign","uniform", "uniformlnt")
+formula <- c("mean","probability", "probability", "probability", "mean","mean","formula","mean","formula","mean","mean","mean","ratio","range","range")
+distribution <- c("continuous","discrete","discrete","discrete","continuous","continuous","-","discrete","-","continuous","discrete","discrete","-","continous","discrete")
+
+data.frame(number, name, formula, distribution) %>%  style_arsenal()
+```
+
+
+Poniżej zostały opisane rozkłady w podziale na dyskretne i ciągłe, które możliwe są do zastosowania w bibliotece simstudy.
+
+# Rozkłady dyskretne z pakietu simstudy
+
+
+## Rozkład Bernoulliego/dwumianowy (binomial distribution)
+
+### Rozkład do niego sprzężony: Beta {.unlisted .unnumbered}
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład opisujący liczbę sukcesów $k$ w ciągu $N$ niezależnych prób, z których każda ma stałe prawdopodobieństwo sukcesu równe $p$. Rozkładem, który opisuje liczbę sukcesów w ciągu N prób, jest rozkład hipergeometryczny (próby są zależne).
+
+Parametry:
+
+* $n$- liczba prób
+* $p$- prawdopodobieństwo sukcesu
+
+
+Funkcja rozkładu prawdopodobieństwa:
+$$ X\sim\text{B}(n,p)$$ 
+
+$$f(x;n,p)={n\choose k}p^{k}(1-p)^{n-k}$$
+$$ \text{E(X)}=np \qquad \text{Var}(X)=np(1-p)$$
+```{r, echo=FALSE}
+
+x=c(0:40)
+data_bern <- data.frame(lambda1 = integer(length(x)),lambda4 =  integer(length(x)), lambda10 =  integer(length(x)))
+
+for (k in 1:ncol(data_bern)){
+  wart <- c(0.7,0.5,0.3)
+  bern <- dbinom(x,size=40,wart[k])
+  data_bern[ , k] <- data_bern[ ,k] + bern
+}
+
+#data_bern <- t(data_bern)
+colors <- c("p=0.7" = "red", "p=0.5" = "blue", "p=0.3" = "green")
+
+ggplot(data_bern, aes(x))+
+  geom_point(aes(y=data_bern[,1], color="p=0.7")) +
+  geom_line(aes(y=data_bern[,1], color="p=0.7")) + 
+  geom_point(aes(y=data_bern[,2], color="p=0.5")) +
+  geom_line(aes(y=data_bern[,2], color="p=0.5")) +
+  geom_point(aes(y=data_bern[,3], color="p=0.3")) + 
+  geom_line(aes(y=data_bern[,3], color="p=0.3")) +
+  labs(y="P(X=k)", x="k",color = "Legenda", title = "Wykres gęstości- rozkład Bernoulliego") + 
+  scale_color_manual(values = colors) + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* Stosowany wszędzie tam, gdzie mamy 2 możliwości sukces lub porażkę np. przyjęcia leku, działania tabletek itp..
+* Możemy używać do określenia typu choroby lub przynależności do danej grupy, np. kohorta i typ mistenii gravis w dokumencie UM Lublin.
+
+## Rozkład zero-jedynkowy (binary distribution)
+
+### Rozkład do niego sprzężony: Beta {.unlisted .unnumbered}
+
+### Opis rozkładu {.unlisted .unnumbered}
+Jest to szczególny przypadek rozkładu dwupunktowego, gdzie zmienna losowa przyjmuje tylko wartości 0 i 1. Używamy do określenia prawdopodobieństwa pojedynczego zdarzenia.
+
+\begin{center} P(X=1)=p, \qquad P(X=0)=1-p \end{center}
+$$ \text{E(X)}=p \qquad \text{Var}(X)=p(1-p)$$
+
+
+## Rozkład kategoryczny 
+
+### Rozkład do niego sprzężony: Dirichlet {.unlisted .unnumbered}
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Jest nazywany uogólnionym rozkładem Bernoulliego, mamy więcej niż 2 możliwe kategorie.
+Rozkład przyjmuje wartości od 1 do K, każda wartość reprezentuje inną kategorię, a kategorii jest K. Dla zmiennej kategorycznej z k kategoriami, wzór jest ciągiem prawdopodobieństw, które sumują się do 1.
+
+## Rozkład ujemny dwumianowy (Rozkład Pascala)
+
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+### Rozkład do niego sprzężony: Beta {.unlisted .unnumbered}
+Rozkład opisuje liczbę sukcesów i porażek w niezależnych i posiadających równe prawdopodobieństwo sukcesu próbach Bernoulliego, zanim pojawi się określona liczba sukcesów. Jest uogólnieniem rozkładu geometrycznego dla wielu prób.
+
+Parametry:
+
+* $r$- liczba sukcesów do zakończenia eksperymentu
+* $p$- prawdopodobieństwo sukcesu
+
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* Może być stosowany do określenia wielkości próby w badaniu, gdzie oczekujemy efektu przy danej liczbie osób [@negbin].
+
+
+## Rozkład Poissona
+
+### Rozkład do niego sprzężony: Gamma {.unlisted .unnumbered}
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład wyraża prawdopodobieństwo zdarzeń następujących po sobie z daną częstotliwością $\lambda$- ilość zdarzeń na jednostkę czasową w danym czasie. Analizowane zdarzenia zachodzą niezależnie, czyli czas następnego zdarzenia nie zależy od tego kiedy wystąpiło poprzednie zdarzenie. 
+
+Parametry:
+
+* $k$- liczba wystąpień zdarzenia  
+* $\lambda$- dodatnia liczba rzeczywista, oczekiwana liczba zdarzeń w danych przedziale czasu
+
+
+Gęstość rozkładu (prawdopodobieństwo, że zajdzie dokładnie $k$ zdarzeń):
+$$ X\sim\text{Poiss}(\lambda)$$ 
+
+$$f(k,\lambda)=P(X=k)=\frac{\lambda^{k}e^{-\lambda}}{k!}$$
+$$ \text{E(X)}=\lambda \qquad \text{Var}(X)=\lambda$$
+```{r, echo=FALSE}
+
+x=c(0:20)
+data_pois <- data.frame(lambda1 = integer(length(x)),lambda4 =  integer(length(x)), lambda10 =  integer(length(x)))
+wart <- c(1,4,10)
+for (k in 1:ncol(data_pois)){
+  wart <- c(1,4,10)
+  pois <- dpois(x,wart[k])
+  data_pois[ , k] <- data_pois[ ,k] + pois
+}
+
+#data_pois <- t(data_pois)
+colors <- c("lambda=1" = "red", "lambda=4" = "blue", "lambda=10" = "green")
+
+ggplot(data_pois, aes(x))+
+  geom_point(aes(y=data_pois[,1], color="lambda=1")) +
+  geom_line(aes(y=data_pois[,1], color="lambda=1")) + 
+  geom_point(aes(y=data_pois[,2], color="lambda=4")) +
+  geom_line(aes(y=data_pois[,2], color="lambda=4")) +
+  geom_point(aes(y=data_pois[,3], color="lambda=10")) + 
+  geom_line(aes(y=data_pois[,3], color="lambda=10")) +
+  labs(y="P(X=k)", x="k",color = "Legenda", title = "Wykres gęstości- rozkład Poissona") + 
+  scale_color_manual(values = colors) + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* Określa tempo przybycia pacjentów do szpitala
+Jest to krytyczna wartość w powszechnej sytuacji, gdzie liczba łóżek dostępnych dla pacjentów, aby pomieścić wszystkich nowych pacjentów.
+* Przybliżone określenie przybywających pacjentów, aby określić poziom zatrudnienia do badań laboratoryjnych.
+
+
+
+## Dodatni rozkład Poissona (Zero-truncated Poisson distribution)
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład przyjmuje dodatnie liczby całkowite, jest to obcięty rozkład Poissona, który wyklucza 0. 
+Znany jest też pod nazwami: warunkowy rozkład Poissona i dodatni rozkład Poissona. Zazwyczaj nie jesteśmy zainteresowani modelowaniem danych z tego rozkładu, ale jest on przydatny do generowania dodatnich zbiorów, gdzie nie jest pożądane występowanie wartości 0. Przykładem zmiennej z rozkładu jest na przykład zmienna liczby produktów w koszyku sklepowym przy linii kas w markecie. 
+
+Parametry:
+
+* $k>0$- liczba wystąpień zdarzenia  
+* $\lambda$- dodatnia liczba rzeczywista, oczekiwana liczba zdarzeń w danych przedziale czasu
+
+Funkcja masy prawdopodobieństwa $g(k,\lambda)$ ze standardowego rozkładu Poissona:
+
+$$g(k,\lambda)=P(X=k|X>0)=\frac{f(k,\lambda)}{1-f(0,\lambda)}=\frac{\lambda^{k}}{(e^{\lambda}-1)k!}$$
+
+$$ \text{E(X)}=\frac{\lambda^{k}}{e^{\lambda}-1} \qquad \text{Var}(X)=\frac{\lambda+\lambda^{2}}{1-e^{-\lambda}} + \frac{\lambda^2}{(1-e^{-\lambda})^{2}}$$
+```{r, echo=FALSE}
+
+x=c(0:20)
+data_pois <- data.frame(lambda1 = integer(length(x)),lambda4 =  integer(length(x)), lambda10 =  integer(length(x)))
+wart <- c(1,4,10)
+for (k in 1:ncol(data_pois)){
+  wart <- c(1,4,10)
+  pois <- dztpois(x,wart[k])
+  data_pois[ , k] <- data_pois[ ,k] + pois
+}
+
+colors <- c("lambda=1" = "red", "lambda=4" = "blue", "lambda=10" = "green")
+
+ggplot(data_pois, aes(x))+
+  geom_point(aes(y=data_pois[,1], color="lambda=1")) +
+  geom_line(aes(y=data_pois[,1], color="lambda=1")) + 
+  geom_point(aes(y=data_pois[,2], color="lambda=4")) +
+  geom_line(aes(y=data_pois[,2], color="lambda=4")) +
+  geom_point(aes(y=data_pois[,3], color="lambda=10")) + 
+  geom_line(aes(y=data_pois[,3], color="lambda=10")) +
+  labs(y="P(X=k|X>0)", x="k",color = "Legenda", title = "Wykres gęstości- rozkład niezeorwy Poissona") + 
+  scale_color_manual(values = colors) + theme_minimal()
+
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* w przypadku gdy wiemy, że zmiana np. w komórkach pojawi się do jakiegoś czasu, jesteśmy pewni, że istnieje małe prawdopodobieństwo, że pojawi się po wyznaczonym okresie [@non_zero_pois].
+* Badanie czynników ryzyka liczby naczyń ze zwężeniem w tętnicy wieńcowej, gdy wiemy, że pacjent ma jakąś dolegliwość np. zwężenie w tętnicy [@non_zer_pois2].
+
+## Rozkład jednostajny dyskretny 
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład przypisuje jednakowe prawdopodobieństwo do $n$ różnych liczb rzeczywistych $k_{1},\ldots, k_{n}$, natomiast inne liczby mają przypisane prawdopodobieństwo zero. Zakładamy też, że $k_{1},\ldots, k_{n}$ są liczbami całkowitymi z przedziału $[a,b]$. 
+
+Parametry:
+
+* $n=a+b-1$- liczba elementów $k_{1},\ldots, k_{n}$
+* $a,b$- krańce przedziału 
+
+Funkcja gęstości prawdopodobieństwa:
+
+
+$$P(X=x)=\frac{1}{n} \quad a<k<b\\
+\text{poza przedziałem [a,b] wynosi 0}$$
+
+Dla zmiennej X o rozkładzie jednostajnym dyskretnym z parametrami k, a i b:
+$$ \text{E(X)}=\frac{a+b}{2} \qquad \text{Var}(X)=\frac{n^{2}-1}{12}$$
+```{r, echo=FALSE}
+a <- 1; b <- 4
+n <- a+b-1
+data <- data.frame(x=seq(a,b), y=rep(1/n,n), c=rep(0,n))
+
+ggplot(data, aes(x=x, y=y))  +
+  geom_point(col="blue") +
+  geom_point(aes(x=x,y=c), shape=1, col="blue") +
+  geom_segment(aes(x=x, xend=x, y=0, yend=y), col="red", linetype="longdash") +
+  labs(y="P(X=x)", x="k",color = "Legenda", title = "Wykres gęstości- rozkład jednostajny dyskretny") +
+  labs(y="P(X=x)", x="x",color = "Legenda") + 
+  scale_color_manual(values = colors) + 
+  scale_y_continuous(breaks = c(0,0.1,0.2,0.25),
+                       # label them with names
+                       labels = c("0","0.1","0.2","1/n=0.25")) + 
+  theme_minimal()
+
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* W przypadku zdarzeń np. testów gdzie mamy policzalne, całkowite wyniki osiągane z równym prawdopodobieństwem, przedziałem jest ograniczona skala testu.
+
+# Rozkłady ciągłe z simstudy
+
+
+## Rozkład Beta
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Przyjmuje wartości od 0 do 1, został zastosowany do modelowania zachowania zmiennych losowych ograniczonych do przedziałów o skończonej długości. Rozkład jest sprzężonym rozkładem w statystyce Bayesowskiej do rozkładów między innymi: Bernoulliego i dwumianowego.
+
+Parametry:
+
+* $\alpha,\beta$- dodatnie parametry kształtu
+
+
+Gęstość rozkładu:
+$$ X\sim\text{Beta}(\alpha,\beta)$$ 
+$$f(x;\alpha,\beta)= \frac{x^{\alpha-1}(1-x)^{\beta-1}}{\text{B}(\alpha,\beta)}\quad \text{dla} \quad  0\leq x\leq1$$
+$$\text{B}(\alpha,\beta)=\frac{\Gamma(\alpha)\Gamma(\beta)}{\Gamma(\alpha+\beta)}$$
+$$ \text{E(X)}=\frac{\alpha}{\alpha+\beta} \qquad \text{Var}(X)=\frac{\alpha\beta}{(\alpha+\beta)^{2}(\alpha+\beta+1)}$$
+```{r, echo=FALSE}
+
+x_lower <- 0
+x_upper <- 1
+ 
+
+
+ggplot(data.frame(x = c(x_lower, x_upper)), aes(x = x)) + xlim(x_lower, x_upper) +
+     stat_function(fun = dbeta, args = list(shape1=0.5,shape2=0.5), aes(colour = "alpha=0.5, beta=0.5")) + 
+     stat_function(fun = dbeta, args = list(shape1=5, shape2=1), aes(colour = "alpha=5, beta=1")) + 
+     stat_function(fun = dbeta, args = list(shape1=2,shape2=2), aes(colour = "alpha=2, beta=2")) + 
+     stat_function(fun = dbeta, args = list(shape1=2,shape2=5), aes(colour = "alpha=2, beta=5")) + 
+     scale_color_manual("Legenda", values = c("blue", "green", "red", "purple")) +
+     labs(x = "\n x", y = "f(x) \n", 
+        title = "Wykres gęstości- rozkład beta") + 
+     theme(plot.title = element_text(hjust = 0.5), 
+         legend.title = element_text(face="bold", size = 10),
+         legend.position = "right") + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* Zastosowanie testów dopasowania rozkładu beta do stanowych wskaźników śmiertelności Covid-19 w Stanach, obliczonych przed oraz w trakcie prowadzenia kampanii szczepień [@covid].
+
+## Rozkład wykładniczy 
+
+### Rozkład do niego sprzężony: Gamma {.unlisted .unnumbered}
+
+### Opis rozkładu  {.unlisted .unnumbered}
+
+
+Rozkład opisuje sytuację, w której oczekujemy n zjawisko całkowicie losowe, mogące zajść w dowolnej chwili $t\geq0$, rozkład posiada własność braku pamięci, co oznacza, że prawdopodobieństwo nie zmienia się gdy wiemy, że zdarzenie nie zaszło w przedziale czasowym [0,s]. Jest rozkładem prawdopodobieństwa, między zdarzeniami w punktowym procesie Poissona, czyli procesie, w którym zdarzenia występują w sposób ciągły ze stałą szybkością. Należy do rodziny rozkładów wykładniczych razem z np. rozkładem normalnym, dwumianowym, Poissona i Gamma.
+
+Parametry:
+
+* $\lambda$ - odwrotność parametru skali
+
+Gęstość rozkładu:
+$$ X\sim\text{Exp}(\lambda)$$ 
+$$f(x;\lambda)=\lambda e^{-\lambda x} \quad \text{dla} \quad x\geq0$$
+$$ \text{E(X)}=\frac{1}{\lambda} \qquad \text{Var}(X)=\frac{1}{\lambda^2}$$
+
+```{r, echo=FALSE}
+x_lower <- 0
+x_upper <- 5
+ 
+max_height2 <- max(dexp(x_lower:x_upper, rate = 1, log = FALSE), 
+                    dexp(x_lower:x_upper, rate = 2, log = FALSE),
+                    dexp(x_lower:x_upper, rate = 3, log = FALSE),
+                    dexp(x_lower:x_upper, rate = 0.5, log = FALSE))
+ 
+
+ggplot(data.frame(x = c(x_lower, x_upper)), aes(x = x)) + xlim(x_lower, x_upper) + 
+     ylim(0, max_height2) +
+     stat_function(fun = dexp, args = list(rate = 0.5), aes(colour = "lambda=0.5")) + 
+     stat_function(fun = dexp, args = list(rate = 1), aes(colour = "lambda=1")) + 
+     stat_function(fun = dexp, args = list(rate = 2), aes(colour = "lambda=2")) + 
+     stat_function(fun = dexp, args = list(rate = 3), aes(colour = "lambda=3")) + 
+     scale_color_manual("Legenda", values = c("blue", "green", "red", "purple")) +
+     labs(x = "\n x", y = "f(x) \n", 
+        title = "Wykres gęstości- rozkład wykładniczy") + 
+     theme(plot.title = element_text(hjust = 0.5), 
+         axis.title.x = element_text(face="bold", colour="blue", size = 12),
+         axis.title.y = element_text(face="bold", colour="blue", size = 12),
+         legend.title = element_text(face="bold", size = 10),
+         legend.position = "right") + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+* W znalezionym artykule pojawiło się zastosowanie rozkładu do usuwania szumu z obrazów mózgu w celu ułatwienia diagnostyki, prawdopodobieństwo pojawienia się szumu było opisane rozkładem wykładniczym [@exp].
+
+## Rozkład Gamma
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład jest uogólnioną wersją rozkładu wykładniczego, różnicą jest czas oczekiwania do kolejnego zdarzenia zamiast do pierwszego. Suma niezależnych $n$ zmiennych o rozkładzie Exp($\lambda$) ma rozkład Gammma(n,$\lambda$). Rozkład gamma jest rozkładem sprzężonym między innymi do rozkładów: wykładniczego i  Poissona w statystyce Bayesowskiej [Conjugate prior](https://en.wikipedia.org/wiki/Conjugate_prior).
+
+Parametry:
+
+* $\alpha$ - parametr kształtu
+* $\beta$- odwrotność parametru skali
+
+Gęstość rozkładu:
+$$ X\sim\text{Gamma}(\alpha, \beta)$$ 
+$$f(x;\alpha,\beta)=\frac{x^{\alpha-1}e^{-\beta x }\beta^{\alpha}}{\Gamma(\alpha)} \quad \text{dla} \quad x>0, \quad \alpha,\beta>0 $$
+$$\Gamma(z)=\int_{0}^{\infty}t^{z-1}e^{-t}dt $$
+$$ \text{E(X)}=\frac{\alpha}{\beta} \qquad \text{Var}(X)=\frac{\alpha}{\beta^2}$$
+
+```{r, echo=FALSE}
+x_lower_g <- 0
+x_upper_g <- 5
+
+ggplot(data.frame(x = c(x_lower_g , x_upper_g)), aes(x = x)) + 
+  xlim(c(x_lower_g , x_upper_g)) + 
+  stat_function(fun = dgamma, args = list(rate = 2, shape = 2), aes(colour = "skala=2, kształt=2")) + 
+  stat_function(fun = dgamma, args = list(rate = 1, shape = 2), aes(colour = "skala=2, kształt=1")) + 
+  stat_function(fun = dgamma, args = list(rate = 2, shape = 3), aes(colour = "skala=2, kształt=3")) + 
+  scale_color_manual("Legenda", values = c("black", "blue", "red")) +
+  labs(x = "\n x", y = "f(x) \n", 
+       title = "Wykres gęstości- rozkład gamma") + 
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_text(face="bold", size = 10)) + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+* Używany do modelowania wskaźników raka, jest on podobny do rozkładu wykładniczego i można go wykorzystywać do podobnych zjawisk np. modelowania czasu remisji [@gamma].
+
+## Rozkład normalny
+
+### Rozkład do niego sprzężony: Normalny {.unlisted .unnumbered}
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład opisany parametrami $\mu$ oraz $\sigma^{2}$, bardzo często obserwowany w danych ze względu na jego charakter, gdy jakaś wielkość jest sumą lub średnią bardzo wielu drobnych losowych czynników to niezależnie od rozkładu czynników jej rozkład będzie zbliżony do normalnego.
+
+Parametry:
+
+* $\mu$ oraz $\sigma^2$
+
+Funkcja gęstości dla rozkładu:
+$$X\sim N(\mu,\sigma^{2})$$
+$$f(x)=\frac{1}{\sigma\sqrt{2\pi}}exp\left(\frac{-\left(x-\mu \right)^2}{2\sigma^2}\right)$$
+
+$$ \text{E(X)}=\mu \qquad \text{Var}(X)=\sigma^{2}$$
+```{r, echo=FALSE}
+colors <- c("mean=0, sd=1" = "red", "mean=0, sd=0.2" = "blue", "mean=0, sd=0.6" = "green", "mean=2, sd=0.7"="orange")
+
+
+ggplot(data = data.frame(x = c(-5, 5)), aes(x)) +
+  stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = 1), aes(color="mean=0, sd=1")) +
+   stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = 0.2), aes(color="mean=0, sd=0.2")) +
+  stat_function(fun = dnorm, n = 101, args = list(mean = 0, sd = 0.6), aes(color="mean=0, sd=0.6")) +
+  stat_function(fun = dnorm, n = 101, args = list(mean = 2, sd = 0.7), aes(color="mean=2, sd=0.7")) +
+  scale_y_continuous(breaks = NULL) + 
+   labs(y="f(x)", x="x",color = "Legenda", title = "Wykres gęstości- rozkład normalny") + 
+  scale_color_manual(values = colors) + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+* Rozkład ma wiele zastosowań w medycynie, np. ciśnienie krwi ma rozkład normalny, możemy sprawdzić liczbę osób z danym ciśnieniem.
+* Do oszacowania siły efektu dla danej grupy ludzi biorącej udział w badaniu.
+
+
+## Rozkład jednostajny
+
+### Rozkład do niego sprzężony: Pareto {.unlisted .unnumbered} 
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rozkład opisany parą parametrów a i b, krańcami wybranego przedziału, jego gęstość na przedziale od a do b jest różna od zera, ale poza nim równa 0. 
+
+Parametry:
+
+* $a,b$- krańce przedziału 
+
+Funkcja gęstości prawdopodobieństwa:
+$$ X\sim\text{U}[a,b]$$ 
+$$f(x)=\frac{1}{b-a} \quad a<x<b\\
+\text{poza przedziałem [a,b] wynosi 0}$$
+Dla zmiennej X o rozkładzie jednostajnym z parametrami a i b:
+$$ \text{E(X)}=\frac{a+b}{2} \qquad \text{Var}(X)=\frac{(b-a)^{2}}{12}$$
+```{r, echo=FALSE}
+a <- 0; b <- 1
+ggplot(data.frame(x = c(a, b)), aes(x = x)) + xlim(c(a, b)) + ylim(0, 1/(b - a))  + 
+  stat_function(fun = dunif, args = list(min = a, max = b), col="blue") +
+  labs(y="P(X=k)", x="k",color = "Legenda", title = "Wykres gęstości- rozkład jednostajny") +
+  labs(y="f(x)", x="x",color = "Legenda") + 
+  scale_color_manual(values = colors) + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+
+* Możemy wykorzystać rozkład do obliczenia niepewności całkowitej, przykładem sytuacji jest posiadanie informacji, że pojemność kolby w laboratorium jest podawana jako 1000 $\pm$ 4 ml, prawdopodobieństwo przyjęcia wartości w przedziale [996mL, 1004mL] jest takie samo [@uniform].
+
+* Rozkład parametru ilości dni, po których nastąpi na przykład remisja choroby dla danej grupy, wykorzystane przy dokumencie symulacje FORMA.
+
+# Inne rozkłady
+
+## Rozkład Weibulla
+
+
+### Opis rozkładu {.unlisted .unnumbered}
+Ciągły rozkład prawdopodobieństwa. Najczęściej rozkład jest stosowany do analizy przeżycia do modelowania sytuacji, gdy prawdopodobieństwo śmierci, awarii zmienia się w czasie/ W zależności od doboru parametrów, możemy otrzymać rozkład normalny (dla dużych k), lub wykładniczy.
+
+Parametry:
+
+* $\lambda$- parametr skali, możemy rozumieć jako czas po którym zginie $1-\frac{1}{e}\approx 63,2\%$
+* $k$- parametr kształtu, określa zachowanie prawdopodobieństwa awarii w czasie
+
+Funkcja gęstości prawdopodobieństwa:
+$$ X\sim\text{Weibull}(k,\lambda)$$ 
+$$f(x)=\frac{k}{\lambda} \left( \frac{x}{\lambda} \right)^{k-1}e^{-(x/\lambda)^{k}} \quad x\geq0$$
+Dla zmiennej X o rozkładzie jednostajnym z parametrami a i b:
+$$ \text{E(X)}=\lambda \Gamma\left(1+\frac{1}{k}\right) \qquad \text{Var}(X)=\lambda^{2}\Gamma\left(1+\frac{2}{k}\right)-\mu^{2}$$
+
+```{r, echo=FALSE}
+x_lower_wei <- 0
+x_upper_wei <- 10
+
+ggplot(data.frame(x = c(x_lower_wei , x_upper_wei)), aes(x = x)) + 
+  xlim(c(x_lower_wei , x_upper_wei)) + 
+  stat_function(fun = dweibull, args = list(shape = 2, scale = 3), aes(colour = "kształt=2, skala=3")) + 
+  stat_function(fun = dweibull, args = list(shape = 3, scale = 3), aes(colour = "kształt=3, skala=3")) + 
+  stat_function(fun = dweibull, args = list(shape = 3, scale = 4), aes(colour = "kształt=3, skala=4")) + 
+  scale_color_manual("Legenda", values = c("blue", "green", "red")) +
+  labs(x = "\n x", y = "f(x) \n", 
+       title = "Wykres gęstości- rozkład Weibulla") + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.title.x = element_text(face="bold", colour="blue", size = 12),
+        axis.title.y = element_text(face="bold", colour="blue", size = 12),
+        legend.title = element_text(face="bold", size = 10),
+        legend.position = "right") + theme_minimal()
+```
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+* Znaleziony artykuł obejmował zastosowanie funkcji rozkładu Weibulla jako alternatywy dla standardowej analizy wariancji przy małych próbkach, rezultatem było określenie większej czułości dla rozkładu [Use of the Weibull distribution for analysis of a clinical therapeutic study in rheumatoid arthritis](https://scholarlycommons.henryford.com/hfhmedjournal/vol24/iss3/7/).   
+
+* Zastosowany do badania wielkości próby z uwzględnieniem prawdopodobieństwa przerwania badania w symulacji, symulacja pozwoliła na oszacowanie parametrów rozkładu w oparciu o medianę czasu przeżycia i współczynnika zagrożenia [@weibull].
+
+
+## Rozkład Dirichleta
+
+### Opis rozkładu {.unlisted .unnumbered}
+
+Rodzina ciągłych rozkładów prawdopodobieństwa wielu zmiennych określona wektorem $\alpha$ dodatnich liczb rzeczywistych. Jest uogólnieniem rozkładu beta w przestrzeni wielowymiarowej. Funkcja rozkładu zwraca przekonanie, że prawdopodobieństwo K możliwych zdarzeń losowych wynosi $x_{i}$ biorąc pod uwagę, że każde zdarzenie zostało zaobserwowane $\alpha_{i}-1$ razy.
+
+### Zastosowanie w medycynie {.unlisted .unnumbered}
+* Stosowany przy symulowaniu danych gdzie rozróżniamy podział na kategorie np. rozłożenie pacjentów w ośrodkach, przy dokumencie FORMA.
+* Wykorzystany przy symulowaniu statusów pacjentów, czyli np. wykluczenie, ukończenie lub pogorszenie, użyte w dokumencie UM Lublin.
+
+
+# Bibliografia
+
